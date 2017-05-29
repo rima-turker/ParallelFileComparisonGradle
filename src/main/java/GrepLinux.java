@@ -1,9 +1,11 @@
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.LineNumberReader;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -15,31 +17,51 @@ import java.util.concurrent.TimeUnit;
 
 public class GrepLinux {
 
-	private static ExecutorService algorithmExecutor;
-	private static final List<String> mainList = Collections.synchronizedList(new ArrayList<String>());
+	private static ExecutorService executor;
+	private static final List<String> result_matchedLines = Collections.synchronizedList(new ArrayList<String>());
 
-//	static int sum = 0;
+	/*
+	 * This variable only holds the big file in chunks 
+	 * integer holds the chunk number (ex: 0till 10 if you divide the file into 10)
+	 * International_Atomic_Time> Category:Time_scales>
+	 * Map<String,String> first string is the second split([1]) of the file because we compare it with category file
+	 * Our purpose is to find entities who has path to our categories
+	 *second str in the map whole corresponding line of the file
+	 *  
+	 */
+	private static Map<Integer, Map<String,String>> hmap_bigFile = new HashMap<>();
 
-	private static Map<Integer, Map<String,String>> map = new HashMap<>();
-
+	
 	public static void main(String[] args) {
-
-		if (args.length != 3) {
-			System.err.println("wrong number of parameters");
-			return;
-		}
+//		if (args.length != 3) 
+//		{
+//			System.err.println("wrong number of parameters");
+//			return;
+//		}
+		
+		
 		final String str_smallFile = args[0];
-		//final String str_bigFile = "/home/rtue/workspace/CategoryTreeGradle/articleCategory_EntitiyBasedFiltered";//args[1];
+		//final String str_bigFile = "/home/rtue/workspace/CategoryTreeGradle/skos_broader_CatCleaned_sort.txt";
 		final String str_bigFile = args[1];
 		final int numberOfCPU = Integer.parseInt(args[2]);
 		//final int branchFactor = 3181 / numberOfCPU;
-		final int branchFactor = 21652565 / numberOfCPU;
-
-		algorithmExecutor = Executors.newFixedThreadPool(numberOfCPU);
-
+	
+		LineNumberReader lnr=null;
+		try 
+		{
+			lnr = new LineNumberReader(new FileReader(new File(str_bigFile)));
+			lnr.skip(Long.MAX_VALUE);
+		} 
+		catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		final int branchFactor = (lnr.getLineNumber() + 1)/ numberOfCPU;
+		//final int branchFactor = 21652565 / numberOfCPU;
+		executor = Executors.newFixedThreadPool(numberOfCPU);
 		System.out.println("Start chunking");
-		readChunkFromBigFile_rima(branchFactor, str_bigFile,numberOfCPU);
-		//readChunkFromBigFile(branchFactor, str_bigFile);
+		readChunkFromBigFile(branchFactor, str_bigFile,numberOfCPU);
 		System.out.println("Chunking done");
 
 
@@ -52,18 +74,22 @@ public class GrepLinux {
 //		System.err.println("Map Size= "+map.size());
 //		System.err.println(numberOfCPU);
 		try {
+			
+			
+			
+			
 			for (int i = 0; i < numberOfCPU; i++) {
 				final int startIndex = i;
 				final Runnable task = () -> {
 					System.out.println("Task " + startIndex + " started.");
-					writeMatchingLinesToFile(str_smallFile, map.get(startIndex));
+					findMatchingLines(str_smallFile, hmap_bigFile.get(startIndex));
 					System.out.println("Task " + startIndex + " finsihed.");
 				};
-				algorithmExecutor.execute(task);
+				executor.execute(task);
 			}
 
-			algorithmExecutor.shutdown();
-			algorithmExecutor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+			executor.shutdown();
+			executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
 
 			writeResult("result");
 
@@ -73,7 +99,7 @@ public class GrepLinux {
 
 	}
 
-	private static void readChunkFromBigFile_rima(int branchFactor, String str_bigFile, int numberOfCpu) {
+	private static void readChunkFromBigFile(int branchFactor, String str_bigFile, int numberOfCpu) {
 
 		final Map<String,String> chunk = new HashMap<>();
 		int lineCounter = 0;
@@ -95,7 +121,7 @@ public class GrepLinux {
 						chunk.put(b_line.toLowerCase().split(" ")[1],b_line.toLowerCase());
 					} else {
 
-						map.put(index++, new HashMap<>(chunk));
+						hmap_bigFile.put(index++, new HashMap<>(chunk));
 						chunk.clear();
 						start = (index * branchFactor)+index;
 						end = start + branchFactor;
@@ -103,7 +129,7 @@ public class GrepLinux {
 				}
 			}
 			if(!chunk.isEmpty()){
-				map.put(index++, new HashMap<>(chunk));
+				hmap_bigFile.put(index++, new HashMap<>(chunk));
 			}
 			br_bigFile.close();
 		} catch (Exception exception) {
@@ -111,34 +137,8 @@ public class GrepLinux {
 		}
 	}
 	
-//	private static List<String> readChunkFromBigFile(int branchFactor, String str_bigFile) {
-//		List<String> chunk = new ArrayList<>();
-//		int lineCounter = 0;
-//		int index = 0;
-//		int start = 0;
-//		int end = start + branchFactor;
-//		try {
-//			BufferedReader br_bigFile = new BufferedReader(new FileReader(str_bigFile));
-//			String b_line;
-//			while ((b_line = br_bigFile.readLine()) != null) {
-//				lineCounter++;
-//				if (lineCounter >= start && lineCounter < end) {
-//					chunk.add(b_line.toLowerCase());
-//				} else {
-//					map.put(index++, chunk);
-//					chunk.clear();
-//					start = index * branchFactor+1;
-//					end = start + branchFactor;
-//				}
-//			}
-//			br_bigFile.close();
-//		} catch (Exception exception) {
-//			exception.printStackTrace();
-//		}
-//		return chunk;
-//	}
 
-	public static void writeMatchingLinesToFile(String str_smallFile, Map<String, String> map2) {
+	public static void findMatchingLines(String str_smallFile, Map<String, String> map2) {
 		BufferedReader br_smallFile;
 		try {
 			br_smallFile = new BufferedReader(new FileReader(str_smallFile));
@@ -148,7 +148,7 @@ public class GrepLinux {
 				String str_small = s_line.toLowerCase();
 				final String valueInMap = map2.get(str_small);
 				if(valueInMap!=null){
-					mainList.add(valueInMap);
+					result_matchedLines.add(valueInMap);
 				}
 			}
 			br_smallFile.close();
@@ -162,12 +162,15 @@ public class GrepLinux {
 		file_result.createNewFile();
 		BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(file_result, false));
 
-		for (int i = 0; i < mainList.size(); i++) {
-			bufferedWriter.write(mainList.get(i));
+		for (int i = 0; i < result_matchedLines.size(); i++) {
+			bufferedWriter.write(result_matchedLines.get(i));
 			bufferedWriter.newLine();
 		}
 		bufferedWriter.close();
 		System.out
 		.println("Finished Writing to a file: " + file_result.getName() + " " + file_result.getAbsolutePath());
 	}
+	
+	
 }
+
