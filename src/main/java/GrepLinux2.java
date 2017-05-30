@@ -8,17 +8,20 @@ import java.io.LineNumberReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-public class GrepLinux {
+public class GrepLinux2 {
 
 	private static ExecutorService executor;
 	private static final List<String> result_matchedLines = Collections.synchronizedList(new ArrayList<String>());
+	private static final Set<String> bigFileSet = new HashSet<>();
 
 	/*
 	 * This variable only holds the big file in chunks 
@@ -61,12 +64,19 @@ public class GrepLinux {
 		final int branchFactor = (lnr.getLineNumber() + 1)/ numberOfCPU;
 		
 		System.out.println("Branch Factor: "+branchFactor);
-		
 
 		executor = Executors.newFixedThreadPool(numberOfCPU);
-		System.out.println("Start chunking");
-		readChunkFromBigFile(branchFactor, str_bigFile,numberOfCPU);
-		System.out.println("Chunking done");
+		
+		System.out.println("Start reading");
+		long now = System.currentTimeMillis();
+		readBigFileToSet(str_bigFile);
+		System.out.println("Finish reading. "+TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis()-now));
+		
+		
+		
+//		System.out.println("Start chunking");
+//		readChunkFromBigFile(branchFactor, str_bigFile,numberOfCPU);
+//		System.out.println("Chunking done");
 
 
 //		map.entrySet().stream().forEach(p -> {
@@ -75,15 +85,13 @@ public class GrepLinux {
 //		});
 
 //		System.err.println("SUM "+sum);
-		System.err.println("Map Size= "+hmap_bigFile.size());
-		System.err.println("Map Value Size= "+hmap_bigFile.get(0).size());
 //		System.err.println(numberOfCPU);
 		try {
 			for (int i = 0; i < numberOfCPU; i++) {
 				final int startIndex = i;
 				final Runnable task = () -> {
 					System.out.println("Task " + startIndex + " started.");
-					findMatchingLines(str_smallFile, hmap_bigFile.get(startIndex));
+					findMatchingLines(str_smallFile);
 					System.out.println("Task " + startIndex + " finsihed.");
 				};
 				executor.execute(task);
@@ -100,77 +108,89 @@ public class GrepLinux {
 
 	}
 
-	private static void readChunkFromBigFileParallel(int branchFactor, String str_bigFile, int numberOfCpu) {
-		
-	}
-	
-	private static void readChunkFromBigFile(int branchFactor, String str_bigFile, int numberOfCpu) {
-
-		final Map<String,List<String>> chunk = new ConcurrentHashMap<>();
-		int lineCounter = 0;
-		int index = 0;
-		int start = 1;
-		int end = start + branchFactor;
+	private static void readBigFileToSet(String str_bigFile) {
 		try {
-			BufferedReader br_bigFile = new BufferedReader(new FileReader(str_bigFile));
+			final BufferedReader br_bigFile = new BufferedReader(new FileReader(str_bigFile));
 			String b_line;
 			while ((b_line = br_bigFile.readLine()) != null) 
 			{
-				lineCounter++;
-				b_line = b_line.replaceAll("Category:", "").replaceAll(">", "");
-				String category = b_line.toLowerCase().split(" ")[1];
-				if(index == numberOfCpu-1){
-					final List<String> listValue = chunk.get(category);
-					if(listValue==null){
-						chunk.put(category,Arrays.asList(b_line.toLowerCase()));
-					}else{
-						ArrayList<String> newList = new ArrayList<>(listValue);
-						newList.add(b_line.toLowerCase());
-						chunk.put(category,newList);
-					}
-				}
-				else{
-					if (lineCounter >= start && lineCounter < end) {
-						final List<String> listValue = chunk.get(category);
-						if(listValue==null || listValue.isEmpty()){
-							chunk.put(category,Arrays.asList(b_line.toLowerCase()));
-						}else{
-							ArrayList<String> newList = new ArrayList<>(listValue);
-							newList.add(b_line.toLowerCase());
-							chunk.put(category,newList);
-						}												
-					} else {
-						hmap_bigFile.put(index++, new ConcurrentHashMap<>(chunk));
-						chunk.clear();
-						start = (index * branchFactor)+index;
-						end = start + branchFactor;
-					}
-				}
+				bigFileSet.add(b_line);
 			}
 			br_bigFile.close();
-			if(!chunk.isEmpty()){
-				hmap_bigFile.put(index++, new ConcurrentHashMap<>(chunk));
-			}
 		} catch (Exception exception) {
 			exception.printStackTrace();
 		}
 	}
+
+//	private static void readChunkFromBigFile(int branchFactor, String str_bigFile, int numberOfCpu) {
+//
+//		final Map<String,List<String>> chunk = new ConcurrentHashMap<>();
+//		int lineCounter = 0;
+//		int index = 0;
+//		int start = 1;
+//		int end = start + branchFactor;
+//		try {
+//			BufferedReader br_bigFile = new BufferedReader(new FileReader(str_bigFile));
+//			String b_line;
+//			while ((b_line = br_bigFile.readLine()) != null) 
+//			{
+//				lineCounter++;
+//				b_line = b_line.replaceAll("Category:", "").replaceAll(">", "");
+//				String category = b_line.toLowerCase().split(" ")[1];
+//				if(index == numberOfCpu-1){
+//					final List<String> listValue = chunk.get(category);
+//					if(listValue==null){
+//						chunk.put(category,Arrays.asList(b_line.toLowerCase()));
+//					}else{
+//						ArrayList<String> newList = new ArrayList<>(listValue);
+//						newList.add(b_line.toLowerCase());
+//						chunk.put(category,newList);
+//					}
+//				}
+//				else{
+//					if (lineCounter >= start && lineCounter < end) {
+//						final List<String> listValue = chunk.get(category);
+//						if(listValue==null || listValue.isEmpty()){
+//							chunk.put(category,Arrays.asList(b_line.toLowerCase()));
+//						}else{
+//							ArrayList<String> newList = new ArrayList<>(listValue);
+//							newList.add(b_line.toLowerCase());
+//							chunk.put(category,newList);
+//						}												
+//					} else {
+//						hmap_bigFile.put(index++, new ConcurrentHashMap<>(chunk));
+//						chunk.clear();
+//						start = (index * branchFactor)+index;
+//						end = start + branchFactor;
+//					}
+//				}
+//			}
+//			br_bigFile.close();
+//			if(!chunk.isEmpty()){
+//				hmap_bigFile.put(index++, new ConcurrentHashMap<>(chunk));
+//			}
+//		} catch (Exception exception) {
+//			exception.printStackTrace();
+//		}
+//	}
 	
 
-	public static void findMatchingLines(String str_smallFile, Map<String, List<String>> map) {
+	public static void findMatchingLines(String str_smallFile) {
 		BufferedReader br_smallFile;
+		int count =1;
 		try {
 			br_smallFile = new BufferedReader(new FileReader(str_smallFile));
 
 			String s_line = null;
 			while ((s_line = br_smallFile.readLine()) != null) {
 				String str_small = s_line.toLowerCase();
-				final List<String> valueInMap = map.get(str_small);
-				if(valueInMap!=null && !valueInMap.isEmpty()){
-					for(String s:valueInMap){
-						result_matchedLines.add(s);
+				for(String str_bline : bigFileSet)
+				{
+					if(str_bline.contains(str_small)){
+						result_matchedLines.add(str_bline);
 					}
 				}
+				System.err.println(count++);
 			}
 			br_smallFile.close();
 		} catch (IOException e) {
